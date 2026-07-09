@@ -5,6 +5,7 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 #import "NMLyricVisualHelpers.h"
+#import "NMLyricPlaybackOverlayView.h"
 
 typedef NS_ENUM(NSInteger, NMLyricPatchMode) {
     NMLyricPatchModeTransparent,
@@ -62,13 +63,19 @@ typedef struct {
 
 static const NSInteger NMMaxHookRetryCount = 80;
 static char NMHostViewKey;
+static char NMPlaybackOverlayViewKey;
 static char NMLyricStyleRefreshPendingKey;
 static IMP NMOriginalViewDidMoveToWindow = NULL;
 static IMP NMOriginalLayout = NULL;
 static IMP NMOriginalMouseMoved = NULL;
 static IMP NMOriginalMouseEntered = NULL;
 static IMP NMOriginalMouseExited = NULL;
+static IMP NMOriginalWindowSetCurrentText = NULL;
+static IMP NMOriginalWindowSetLyricsOffset = NULL;
+static IMP NMOriginalWindowSetLastHighlightedLineModel = NULL;
+static IMP NMOriginalWindowSetLyricsModel = NULL;
 static BOOL NMHookInstalled = NO;
+static BOOL NMWindowHookInstalled = NO;
 static BOOL NMLyricStyleRefreshStarted = NO;
 static BOOL NMLyricHoverMonitorStarted = NO;
 static BOOL NMLyricLayerDiagnosticLogged = NO;
@@ -518,6 +525,102 @@ static void NMApplyLyricStyleToTextField(NSTextField *textField) {
     textField.needsDisplay = YES;
 }
 
+static NSString *NMCurrentLineTextFromWindow(NSWindow *window) {
+    // 新版网易云会把当前高亮行挂在窗口 ivar 上，这里优先复用它避免拿到整份 LRC 文本
+    id lineModel = NMObjectIvar(window, "_lastHighlightedLineModel");
+    if ([lineModel respondsToSelector:@selector(lyricsLineString)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        id lineText = [lineModel performSelector:@selector(lyricsLineString)];
+#pragma clang diagnostic pop
+        if ([lineText isKindOfClass:[NSString class]] && ((NSString *)lineText).length > 0) {
+            return lineText;
+        }
+    }
+
+    id plainText = NMObjectIvar(window, "_LRCPlainText");
+    if ([plainText isKindOfClass:[NSString class]] && ![(NSString *)plainText containsString:@"\n"]) {
+        return plainText;
+    }
+
+    return nil;
+}
+
+static CGFloat NMLyricsOffsetFromWindow(NSWindow *window) {
+    id rawOffset = [window respondsToSelector:@selector(lyricsOffset)]
+        ? @(((CGFloat (*)(id, SEL))objc_msgSend)(window, @selector(lyricsOffset)))
+        : nil;
+    return [rawOffset respondsToSelector:@selector(doubleValue)] ? ((NSNumber *)rawOffset).doubleValue : 0.0;
+}
+
+static NMLyricPlaybackOverlayView *NMEnsurePlaybackOverlayView(NSWindow *window) {
+    if (!window.contentView) {
+        return nil;
+    }
+
+    NMLyricPlaybackOverlayView *overlayView = objc_getAssociatedObject(window.contentView, &NMPlaybackOverlayViewKey);
+    if (overlayView) {
+        overlayView.frame = window.contentView.bounds;
+        return overlayView;
+    }
+
+    overlayView = [[NMLyricPlaybackOverlayView alloc] initWithFrame:window.contentView.bounds];
+    [window.contentView addSubview:overlayView positioned:NSWindowAbove relativeTo:nil];
+    objc_setAssociatedObject(window.contentView, &NMPlaybackOverlayViewKey, overlayView, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return overlayView;
+}
+
+static void NMSetOriginalControlViewHiddenState(NSWindow *window, BOOL shouldHide) {
+    // 26.5.1 的歌词是控件内部自绘，直接把 layer 透明掉能避免看到两层歌词
+    id controlSuperView = NMObjectIvar(window, "_controlSuperView");
+    if ([controlSuperView isKindOfClass:[NSView class]]) {
+        NSView *controlView = (NSView *)controlSuperView;
+        controlView.wantsLayer = YES;
+        controlView.layer.opacity = shouldHide ? 0.0 : 1.0;
+    }
+}
+
+static void NMRefreshPlaybackOverlayForWindow(NSWindow *window) {
+    if (!window || !window.contentView) {
+        return;
+    }
+
+    id lyricsTextField = NMObjectIvar(window, "_lyricsTextField");
+    BOOL needsOverlay = ![lyricsTextField isKindOfClass:[NSTextField class]];
+    NMLyricPlaybackOverlayView *overlayView = NMEnsurePlaybackOverlayView(window);
+    if (!overlayView) {
+        return;
+    }
+
+    if (!needsOverlay) {
+        overlayView.hidden = YES;
+        overlayView.currentText = nil;
+        NMSetOriginalControlViewHiddenState(window, NO);
+        return;
+    }
+
+    NSString *currentText = NMCurrentLineTextFromWindow(window);
+    if (currentText.length == 0) {
+        overlayView.hidden = YES;
+        overlayView.currentText = nil;
+        NMSetOriginalControlViewHiddenState(window, NO);
+        return;
+    }
+
+    overlayView.hidden = NO;
+    overlayView.currentText = currentText;
+    overlayView.playedWidth = NMLyricsOffsetFromWindow(window);
+    overlayView.playedColor = NMColorFromHex(NMRuntimeConfig.lyricPlayedColor, 1.0);
+    overlayView.unplayedColor = NMColorFromHex(NMRuntimeConfig.lyricUnplayedColor, 1.0);
+    overlayView.fontName = NMRuntimeConfig.lyricFontName;
+    overlayView.fontSize = NMRuntimeConfig.lyricFontSize;
+    overlayView.gradientEnabled = NMRuntimeConfig.lyricGradientEnabled;
+    overlayView.gradientStartColor = NMRuntimeConfig.lyricGradientStartColor;
+    overlayView.gradientEndColor = NMRuntimeConfig.lyricGradientEndColor;
+    overlayView.gradientDirection = NMRuntimeConfig.lyricGradientDirection;
+    NMSetOriginalControlViewHiddenState(window, YES);
+}
+
 static void NMApplyLyricStyleToWindowIvars(NSWindow *window) {
     id lyricsTextField = NMObjectIvar(window, "_lyricsTextField");
     if ([lyricsTextField isKindOfClass:[NSTextField class]]) {
@@ -528,6 +631,8 @@ static void NMApplyLyricStyleToWindowIvars(NSWindow *window) {
     if ([controlSuperView isKindOfClass:[NSView class]]) {
         ((NSView *)controlSuperView).needsDisplay = YES;
     }
+
+    NMRefreshPlaybackOverlayForWindow(window);
 }
 
 static void NMRemoveHostView(NSView *contentView) {
@@ -664,6 +769,7 @@ static void NMRefreshLyricStyleInExistingWindows(Class controlClass) {
         if ((windowClass && [window isKindOfClass:windowClass]) || NMViewTreeContainsClass(window.contentView, controlClass)) {
             NMApplyLyricStyle(window.contentView);
             NMApplyLyricStyleToWindowIvars(window);
+            NMRefreshPlaybackOverlayForWindow(window);
         }
     }
     NMReapplyTransparentCloseControls(controlClass);
@@ -762,9 +868,63 @@ static void NMScheduleImmediateLyricStyleRefresh(NSView *view) {
         if (strongView.window.contentView) {
             NMApplyLyricStyle(strongView.window.contentView);
             NMApplyLyricStyleToWindowIvars(strongView.window);
+            NMRefreshPlaybackOverlayForWindow(strongView.window);
         }
         objc_setAssociatedObject(strongView, &NMLyricStyleRefreshPendingKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     });
+}
+
+static void NMInstallWindowTextHook(Class windowClass, SEL selector, IMP *originalStorage, const char *typeEncoding) {
+    IMP replacement = NULL;
+
+    if (selector == @selector(setCurrentText:)) {
+        replacement = imp_implementationWithBlock(^(NSWindow *window, NSString *currentText) {
+            ((void (*)(id, SEL, id))*originalStorage)(window, selector, currentText);
+            NMRefreshPlaybackOverlayForWindow(window);
+        });
+    } else if (selector == @selector(setLastHighlightedLineModel:)) {
+        replacement = imp_implementationWithBlock(^(NSWindow *window, id lineModel) {
+            ((void (*)(id, SEL, id))*originalStorage)(window, selector, lineModel);
+            NMRefreshPlaybackOverlayForWindow(window);
+        });
+    } else if (selector == @selector(setLyricsModel:)) {
+        replacement = imp_implementationWithBlock(^(NSWindow *window, id lyricsModel) {
+            ((void (*)(id, SEL, id))*originalStorage)(window, selector, lyricsModel);
+            NMRefreshPlaybackOverlayForWindow(window);
+        });
+    } else if (selector == @selector(setLyricsOffset:)) {
+        replacement = imp_implementationWithBlock(^(NSWindow *window, double lyricsOffset) {
+            ((void (*)(id, SEL, double))*originalStorage)(window, selector, lyricsOffset);
+            NMRefreshPlaybackOverlayForWindow(window);
+        });
+    }
+
+    if (!replacement) {
+        return;
+    }
+
+    Method method = class_getInstanceMethod(windowClass, selector);
+    *originalStorage = method_getImplementation(method);
+    method_setImplementation(method, replacement);
+}
+
+static void NMInstallWindowHooks(void) {
+    if (NMWindowHookInstalled) {
+        return;
+    }
+
+    Class windowClass = objc_getClass("YYYDesktopLyricsWindow");
+    if (!windowClass) {
+        return;
+    }
+
+    NMInstallWindowTextHook(windowClass, @selector(setCurrentText:), &NMOriginalWindowSetCurrentText, "v@:@");
+    NMInstallWindowTextHook(windowClass, @selector(setLastHighlightedLineModel:), &NMOriginalWindowSetLastHighlightedLineModel, "v@:@");
+    NMInstallWindowTextHook(windowClass, @selector(setLyricsModel:), &NMOriginalWindowSetLyricsModel, "v@:@");
+    NMInstallWindowTextHook(windowClass, @selector(setLyricsOffset:), &NMOriginalWindowSetLyricsOffset, "v@:d");
+
+    NMWindowHookInstalled = YES;
+    NMLog(@"window hooks installed for %@", NSStringFromClass(windowClass));
 }
 
 static void NMCallOriginalMouseEvent(NSView *view, SEL selector, NSEvent *event, IMP originalImplementation) {
@@ -860,6 +1020,7 @@ static BOOL NMIsTargetVersionAllowed(void) {
 static void NMTryInstallHooks(NSInteger retryCount) {
     Class controlClass = objc_getClass("YYYDesktopLyricsControlSuperView");
     if (controlClass) {
+        NMInstallWindowHooks();
         NMInstallControlViewHook(controlClass);
         NMApplyToExistingWindows(controlClass);
         NMStartLyricStyleRefresh(controlClass);

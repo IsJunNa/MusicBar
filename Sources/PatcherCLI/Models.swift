@@ -2,9 +2,9 @@
 
 import Foundation
 
-let patchToolVersion = "0.1.0"
-let supportedAppVersion = "3.1.8"
-let supportedBundleVersion = "3330"
+let patchToolVersion = "0.1.1"
+let supportedAppVersion = "3.1.9"
+let supportedBundleVersion = "3364"
 let defaultAppPath = "/Applications/NeteaseMusic.app"
 let patchDylibFileName = "NMLyricBackgroundPatch.dylib"
 let patchConfigFileName = "NMLyricBackgroundPatchConfig.json"
