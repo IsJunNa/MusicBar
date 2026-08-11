@@ -20,7 +20,7 @@ struct AppInspector {
         }
         let frameworkURL = appURL.appendingPathComponent("Contents/Frameworks/\(patchDylibFileName)")
         let dylibExists = fileManager.fileExists(atPath: frameworkURL.path)
-        let isSupportedVersion = version == supportedAppVersion && bundleVersion == supportedBundleVersion
+        let isSupportedVersion = isSupportedNeteaseVersion(version: version, bundleVersion: bundleVersion)
         let backupURL = backupManager.existingBackup(version: version, bundleVersion: bundleVersion)
         let executableLoadsPatch = loadCommandExists(executableURL: executableURL)
         let isRunning = executableName.map(isProcessRunning(named:)) ?? false

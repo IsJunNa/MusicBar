@@ -36,7 +36,7 @@ $(RUNTIME_BINARY): Runtime/NMLyricBackgroundPatch.m $(RUNTIME_HEADERS) | $(DIST_
 		-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 		-framework AppKit -framework QuartzCore \
 		-install_name @rpath/NMLyricBackgroundPatch.dylib \
-		-current_version 0.1.1 -compatibility_version 0.1.1 \
+		-current_version 0.1.2 -compatibility_version 0.1.0 \
 		-o $@ Runtime/NMLyricBackgroundPatch.m
 
 $(APP_BUNDLE): $(APP_SOURCES) $(CLI_SOURCES) $(CLI_BINARY) $(RUNTIME_BINARY) Packaging/NMLyricBackgroundPatcher-Info.plist $(APP_ICON) | $(DIST_DIR) $(MODULE_CACHE_DIR)

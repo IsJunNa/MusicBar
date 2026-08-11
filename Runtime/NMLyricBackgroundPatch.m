@@ -129,7 +129,7 @@ static NMLyricPatchConfig NMDefaultConfig(void) {
     config.mode = NMLyricPatchModeSolid;
     config.cornerRadius = 8.0;
     config.opacity = 0.8;
-    config.targetBundleVersion = @"3330";
+    config.targetBundleVersion = @"3401";
     config.blurMaterial = @"ultraThin";
     config.gradientStartColor = @"#111827";
     config.gradientEndColor = @"#2563EB";

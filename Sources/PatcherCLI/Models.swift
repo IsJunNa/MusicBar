@@ -2,10 +2,24 @@
 
 import Foundation
 
-let patchToolVersion = "0.1.1"
-let supportedAppVersion = "3.1.9"
-let supportedBundleVersion = "3364"
+let patchToolVersion = "0.1.2"
+// 已确认桌面歌词窗口类与 hook 点在下列版本中仍可用
+let supportedAppVersions: [(version: String, bundleVersion: String)] = [
+    ("3.1.9", "3364"),
+    ("3.1.10", "3401")
+]
+let supportedAppVersion = supportedAppVersions.last?.version ?? "3.1.10"
+let supportedBundleVersion = supportedAppVersions.last?.bundleVersion ?? "3401"
 let defaultAppPath = "/Applications/NeteaseMusic.app"
+
+/// 判断当前网易云版本是否已适配，避免每次发版都只能匹配单一 build
+func isSupportedNeteaseVersion(version: String?, bundleVersion: String?) -> Bool {
+    guard let version, let bundleVersion else {
+        return false
+    }
+
+    return supportedAppVersions.contains { $0.version == version && $0.bundleVersion == bundleVersion }
+}
 let patchDylibFileName = "NMLyricBackgroundPatch.dylib"
 let patchConfigFileName = "NMLyricBackgroundPatchConfig.json"
 let injectedDylibPath = "@executable_path/../Frameworks/NMLyricBackgroundPatch.dylib"

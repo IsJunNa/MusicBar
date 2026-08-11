@@ -148,7 +148,7 @@ struct PatchInstaller {
             throw PatchCLIError.message("网易云音乐正在运行，请先退出后应用补丁")
         }
         guard options.forceVersion || status.isSupportedVersion else {
-            throw PatchCLIError.message("当前版本 \(status.version ?? "-") build \(status.bundleVersion ?? "-") 不在 MVP 支持范围，确认适配后可加 --force-version")
+            throw PatchCLIError.message("当前版本 \(status.version ?? "-") build \(status.bundleVersion ?? "-") 尚未适配，确认后可加 --force-version")
         }
     }
 
