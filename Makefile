@@ -3,6 +3,8 @@
 DIST_DIR := dist
 BUILD_DIR := .build
 MODULE_CACHE_DIR := $(BUILD_DIR)/ModuleCache
+# 和 App 声明的最低系统版本保持一致，避免跟随构建机器抬高启动要求
+SWIFT_TARGET := $(shell uname -m)-apple-macos11.0
 CLI_SOURCES := $(wildcard Sources/PatcherCLI/*.swift)
 APP_SOURCES := $(wildcard Sources/PatcherApp/*.swift)
 RUNTIME_HEADERS := $(wildcard Runtime/*.h)
@@ -28,15 +30,15 @@ $(DIST_DIR):
 $(MODULE_CACHE_DIR):
 	mkdir -p $(MODULE_CACHE_DIR)
 
-$(CLI_BINARY): $(CLI_SOURCES) | $(DIST_DIR) $(MODULE_CACHE_DIR)
-	swiftc -O -module-cache-path $(MODULE_CACHE_DIR) -o $@ $(CLI_SOURCES)
+$(CLI_BINARY): $(CLI_SOURCES) Makefile | $(DIST_DIR) $(MODULE_CACHE_DIR)
+	swiftc -O -target $(SWIFT_TARGET) -module-cache-path $(MODULE_CACHE_DIR) -o $@ $(CLI_SOURCES)
 
-$(RUNTIME_BINARY): Runtime/NMLyricBackgroundPatch.m $(RUNTIME_HEADERS) | $(DIST_DIR) $(MODULE_CACHE_DIR)
+$(RUNTIME_BINARY): Runtime/NMLyricBackgroundPatch.m $(RUNTIME_HEADERS) Makefile | $(DIST_DIR) $(MODULE_CACHE_DIR)
 	clang -dynamiclib -fobjc-arc -fblocks -mmacosx-version-min=11.0 \
 		-fmodules-cache-path=$(MODULE_CACHE_DIR) \
 		-framework AppKit -framework QuartzCore \
 		-install_name @rpath/NMLyricBackgroundPatch.dylib \
-		-current_version 0.1.2 -compatibility_version 0.1.0 \
+		-current_version 0.1.3 -compatibility_version 0.1.0 \
 		-o $@ Runtime/NMLyricBackgroundPatch.m
 
 $(APP_BUNDLE): $(APP_SOURCES) $(CLI_SOURCES) $(CLI_BINARY) $(RUNTIME_BINARY) Packaging/NMLyricBackgroundPatcher-Info.plist $(APP_ICON) | $(DIST_DIR) $(MODULE_CACHE_DIR)
@@ -47,7 +49,7 @@ $(APP_BUNDLE): $(APP_SOURCES) $(CLI_SOURCES) $(CLI_BINARY) $(RUNTIME_BINARY) Pac
 	cp $(APP_ICON) "$(APP_BUNDLE)/Contents/Resources/MusicBar.icns"
 	cp $(CLI_BINARY) "$(APP_BUNDLE)/Contents/Resources/nmlrc-bg-patcher"
 	cp $(RUNTIME_BINARY) "$(APP_BUNDLE)/Contents/Resources/NMLyricBackgroundPatch.dylib"
-	swiftc -O -module-cache-path $(MODULE_CACHE_DIR) -o "$(APP_BINARY)" $(filter-out Sources/PatcherCLI/main.swift,$(CLI_SOURCES)) $(APP_SOURCES)
+	swiftc -O -target $(SWIFT_TARGET) -module-cache-path $(MODULE_CACHE_DIR) -o "$(APP_BINARY)" $(filter-out Sources/PatcherCLI/main.swift,$(CLI_SOURCES)) $(APP_SOURCES)
 	chmod +x "$(APP_BINARY)" "$(APP_BUNDLE)/Contents/Resources/nmlrc-bg-patcher"
 	codesign --force --deep --sign - "$(APP_BUNDLE)"
 

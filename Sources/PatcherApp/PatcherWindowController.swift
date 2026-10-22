@@ -228,7 +228,11 @@ final class PatcherWindowController: NSWindowController {
                         return
                     }
 
-                    self.finishAction(status: "应用失败")
+                    let title = arguments.first == "restore" ? "恢复失败" : "应用失败"
+                    let message = self.displayText(for: error)
+                    self.finishAction(status: title)
+                    self.statusLabel.toolTip = message
+                    self.presentActionError(title: title, message: message)
                 }
             }
         }

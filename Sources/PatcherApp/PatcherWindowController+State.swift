@@ -71,6 +71,7 @@ extension PatcherWindowController {
     /// 更新底部状态文本，空字符串会保持界面安静
     func updateFooterStatus(_ value: String) {
         statusLabel.stringValue = value
+        statusLabel.toolTip = nil
     }
 
     /// 根据背景模式和字体渐变开关隐藏当前无效设置

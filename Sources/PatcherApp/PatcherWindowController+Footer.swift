@@ -56,7 +56,7 @@ extension PatcherWindowController {
 
     /// 底部按钮统一使用白色文字和图标，避免系统圆角按钮在蓝色背景上显示黑色内容
     func applyFooterButtonTint(_ button: NSButton) {
-        if let image = button.image {
+        if #available(macOS 12.0, *), let image = button.image {
             // SF Symbol 在圆角按钮里可能不跟随 contentTintColor，这里直接指定白色层级色
             let whiteSymbol = image.withSymbolConfiguration(.init(hierarchicalColor: .white)) ?? image
             whiteSymbol.isTemplate = false

@@ -40,13 +40,14 @@ struct PatchInstaller {
     }
 
     func apply(_ options: ApplyOptions) throws {
-        if options.quitNetease {
-            try quitNeteaseIfNeeded()
-        }
-
         let status = inspector.inspect(appURL: options.appURL)
         try validateApplyPreconditions(status: status, options: options)
         try confirmApplyIfNeeded(options: options, status: status)
+
+        // 先确认版本和资源可用，避免应用失败前就把用户的网易云退出
+        if options.quitNetease {
+            try quitNeteaseIfNeeded()
+        }
 
         print("创建或复用备份")
         let backupURL = try backupManager.ensureBackup(appURL: options.appURL, version: status.version, bundleVersion: status.bundleVersion)
@@ -144,11 +145,11 @@ struct PatchInstaller {
         guard status.bundleIdentifier == "com.netease.163music" else {
             throw PatchCLIError.message("目标 App 不是网易云音乐：\(status.bundleIdentifier ?? "-")")
         }
-        guard !status.isRunning else {
+        guard !status.isRunning || options.quitNetease else {
             throw PatchCLIError.message("网易云音乐正在运行，请先退出后应用补丁")
         }
         guard options.forceVersion || status.isSupportedVersion else {
-            throw PatchCLIError.message("当前版本 \(status.version ?? "-") build \(status.bundleVersion ?? "-") 尚未适配，确认后可加 --force-version")
+            throw PatchCLIError.message("当前网易云音乐 \(status.version ?? "-")（build \(status.bundleVersion ?? "-")）尚未适配，请更新 MusicBar 后重试")
         }
     }
 

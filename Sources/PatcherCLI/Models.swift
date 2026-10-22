@@ -2,14 +2,15 @@
 
 import Foundation
 
-let patchToolVersion = "0.1.2"
+let patchToolVersion = "0.1.3"
 // 已确认桌面歌词窗口类与 hook 点在下列版本中仍可用
 let supportedAppVersions: [(version: String, bundleVersion: String)] = [
     ("3.1.9", "3364"),
-    ("3.1.10", "3401")
+    ("3.1.10", "3401"),
+    ("3.1.14", "3459")
 ]
-let supportedAppVersion = supportedAppVersions.last?.version ?? "3.1.10"
-let supportedBundleVersion = supportedAppVersions.last?.bundleVersion ?? "3401"
+let supportedAppVersion = supportedAppVersions.last?.version ?? "3.1.14"
+let supportedBundleVersion = supportedAppVersions.last?.bundleVersion ?? "3459"
 let defaultAppPath = "/Applications/NeteaseMusic.app"
 
 /// 判断当前网易云版本是否已适配，避免每次发版都只能匹配单一 build

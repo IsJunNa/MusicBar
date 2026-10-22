@@ -3,6 +3,20 @@
 import AppKit
 
 extension PatcherWindowController {
+    /// 失败时展示底层错误，避免底部状态太短而看不到实际原因
+    func presentActionError(title: String, message: String) {
+        guard let window else {
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "好")
+        alert.beginSheetModal(for: window)
+    }
+
     /// 展示应用图标、版本和外部入口
     func presentAppInfo() {
         let alert = NSAlert()
